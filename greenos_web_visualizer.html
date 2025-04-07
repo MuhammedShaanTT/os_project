@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GreenOS Scheduler Visualization</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f4;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 900px;
+      margin: auto;
+      background: #fff;
+      padding: 20px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      text-align: center;
+      color: #2c3e50;
+    }
+    select, button {
+      padding: 10px;
+      font-size: 16px;
+      margin-top: 10px;
+    }
+    #result {
+      margin-top: 20px;
+      font-size: 18px;
+      color: #2c3e50;
+    }
+    canvas {
+      margin-top: 30px;
+      border: 1px solid #ccc;
+      background: #fff;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>GreenOS Scheduler Visualization</h1>
+    <label for="algorithm">Select Scheduling Algorithm:</label>
+    <select id="algorithm">
+      <option value="fcfs">FCFS</option>
+      <option value="rr">Round Robin</option>
+      <option value="edf">EDF</option>
+      <option value="greenos">GreenOS</option>
+    </select>
+    <button onclick="runScheduler()">Run Simulation</button>
+    <div id="result"></div>
+    <canvas id="ganttCanvas" width="800" height="300"></canvas>
+  </div>
+
+  <script>
+    const tasks = [
+      { name: 'T1', arrival: 0, burst: 4, deadline: 10 },
+      { name: 'T2', arrival: 1, burst: 3, deadline: 8 },
+      { name: 'T3', arrival: 2, burst: 2, deadline: 5 },
+      { name: 'T4', arrival: 3, burst: 1, deadline: 6 }
+    ];
+
+    function runScheduler() {
+      const algo = document.getElementById('algorithm').value;
+      let result = { timeline: [], energy: 0, missed: [] };
+
+      const simTasks = tasks.map(t => ({ ...t, remaining: t.burst }));
+      result = simulate(simTasks, algo);
+
+      drawGantt(result.timeline);
+      document.getElementById('result').innerText = `Energy Used: ${result.energy.toFixed(2)} | Missed Deadlines: ${result.missed.join(', ') || 'None'}`;
+    }
+
+    function simulate(tasks, algo) {
+      let time = 0, energy = 0;
+      let timeline = [], missed = [], queue = [];
+      const taskList = [...tasks];
+
+      if (algo === 'fcfs') {
+        taskList.sort((a, b) => a.arrival - b.arrival);
+        for (let task of taskList) {
+          if (time < task.arrival) {
+            energy += (task.arrival - time) * 0.5;
+            time = task.arrival;
+          }
+          timeline.push({ name: task.name, start: time, end: time + task.burst });
+          time += task.burst;
+          energy += task.burst * 2;
+          if (time > task.deadline) missed.push(task.name);
+        }
+      } else if (algo === 'rr') {
+        const quantum = 2;
+        taskList.sort((a, b) => a.arrival - b.arrival);
+        while (taskList.length || queue.length) {
+          while (taskList.length && taskList[0].arrival <= time) queue.push(taskList.shift());
+          if (queue.length) {
+            const t = queue.shift();
+            const exec = Math.min(t.remaining, quantum);
+            timeline.push({ name: t.name, start: time, end: time + exec });
+            t.remaining -= exec;
+            time += exec;
+            energy += exec * 1.5;
+            while (taskList.length && taskList[0].arrival <= time) queue.push(taskList.shift());
+            if (t.remaining > 0) queue.push(t);
+            else if (time > t.deadline) missed.push(t.name);
+          } else {
+            time++;
+            energy += 0.5;
+          }
+        }
+      } else if (algo === 'edf') {
+        taskList.sort((a, b) => a.arrival - b.arrival);
+        while (taskList.length || queue.length) {
+          while (taskList.length && taskList[0].arrival <= time) queue.push(taskList.shift());
+          if (queue.length) {
+            queue.sort((a, b) => a.deadline - b.deadline);
+            const t = queue.shift();
+            timeline.push({ name: t.name, start: time, end: time + t.burst });
+            time += t.burst;
+            energy += t.burst * 1.2;
+            if (time > t.deadline) missed.push(t.name);
+          } else {
+            time++;
+            energy += 0.5;
+          }
+        }
+      } else if (algo === 'greenos') {
+        taskList.sort((a, b) => a.arrival - b.arrival);
+        while (taskList.length || queue.length) {
+          while (taskList.length && taskList[0].arrival <= time) queue.push(taskList.shift());
+          if (queue.length) {
+            queue.sort((a, b) => (a.deadline / a.burst) - (b.deadline / b.burst));
+            const t = queue.shift();
+            timeline.push({ name: t.name, start: time, end: time + t.burst });
+            time += t.burst;
+            energy += t.burst * 1.0;
+            if (time > t.deadline) missed.push(t.name);
+          } else {
+            time++;
+            energy += 0.5;
+          }
+        }
+      }
+
+      return { timeline, energy, missed };
+    }
+
+    function drawGantt(timeline) {
+      const canvas = document.getElementById('ganttCanvas');
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const barHeight = 30;
+      const barMargin = 10;
+      const scale = 40;
+
+      timeline.forEach((t, i) => {
+        const y = i * (barHeight + barMargin);
+        const width = (t.end - t.start) * scale;
+        const x = t.start * scale;
+        ctx.fillStyle = '#27ae60';
+        ctx.fillRect(x, y, width, barHeight);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(t.name, x + width / 2 - 10, y + barHeight / 2 + 5);
+      });
+    }
+  </script>
+</body>
+</html>
