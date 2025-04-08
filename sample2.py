@@ -2,6 +2,7 @@ import csv
 import json
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
+from tkinter.ttk import Treeview, Style
 
 class Task:
     def __init__(self, name, arrival_time, burst_time, deadline):
@@ -14,15 +15,35 @@ class Task:
         self.finish_time = 0
         self.completed = False
 
+    def reset(self):
+        self.remaining_time = self.burst_time
+        self.start_time = -1
+        self.finish_time = 0
+        self.completed = False
+
 tasks = []
+scheduler_ran = False
 
 # UI setup
 root = tk.Tk()
-root.title("GreenOS Scheduler")
-root.geometry("700x500")
+root.title("GreenOS Scheduler Pro")
+root.geometry("1000x700")
+root.configure(bg="#121212")
 
-output_text = tk.Text(root, wrap='word', bg='black', fg='lime', font=('Courier', 10))
-output_text.pack(expand=True, fill='both')
+# Style
+style = Style()
+style.theme_use("clam")
+style.configure("Treeview",
+                background="#1e1e1e",
+                foreground="#00FF00",
+                rowheight=30,
+                fieldbackground="#1e1e1e",
+                font=('Consolas', 11))
+style.configure("Treeview.Heading", background="#333333", foreground="#00FF00", font=('Consolas', 12, 'bold'))
+
+# Output log box
+output_text = tk.Text(root, wrap='word', bg='#1e1e1e', fg='#00FF00', font=('Consolas', 11), height=12, insertbackground='white')
+output_text.pack(padx=20, pady=(20, 10), fill='x')
 
 def log(msg):
     output_text.insert(tk.END, msg + "\n")
@@ -33,6 +54,7 @@ def add_task(name, at, bt, dl):
         log(f"Invalid input for task {name}. Skipped.")
         return
     tasks.append(Task(name, at, bt, dl))
+    update_task_table()
 
 def load_csv():
     file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
@@ -64,9 +86,23 @@ def manual_input():
         add_task(name, at, bt, dl)
 
 def run_greenos():
+    global scheduler_ran
+    if scheduler_ran:
+        messagebox.showwarning("Already Run", "Scheduler already run. Please clear first before re-running.")
+        return
+    if not tasks:
+        log("No tasks to schedule.")
+        return
+
+    scheduler_ran = True
     time = 0
     energy = 0
+    cpu_energy = 0
+    gpu_energy = 0
+    memory_energy = 0
+    screen_energy = 0
     completed_tasks = 0
+
     log("\n[GreenOS Scheduler Simulation]\n")
     while completed_tasks < len(tasks):
         idx = -1
@@ -87,14 +123,31 @@ def run_greenos():
             time += task.burst_time
             task.finish_time = time
             task.completed = True
+            cpu_energy += task.burst_time * 0.5
+            gpu_energy += task.burst_time * 0.2
+            memory_energy += task.burst_time * 0.15
+            screen_energy += task.burst_time * 0.1
             energy += task.burst_time * 1
             completed_tasks += 1
         else:
             log(f"Idle from {time} to {time + 1}")
             time += 1
+            cpu_energy += 0.3
+            gpu_energy += 0.1
+            memory_energy += 0.1
+            screen_energy += 0.05
             energy += 0.5
 
-    log(f"\nEnergy Consumed: {energy}")
+    conventional_energy = calculate_conventional_energy()
+    energy_saved = conventional_energy - energy
+    log(f"\nTotal Energy Consumed by GreenOS: {energy:.2f}")
+    log(f"  - CPU Energy: {cpu_energy:.2f}")
+    log(f"  - GPU Energy: {gpu_energy:.2f}")
+    log(f"  - Memory Energy: {memory_energy:.2f}")
+    log(f"  - Screen Energy: {screen_energy:.2f}")
+    log(f"Estimated Energy by Conventional OS: {conventional_energy:.2f}")
+    log(f"Energy Saved by GreenOS: {energy_saved:.2f}")
+
     log("Missed Deadlines:")
     missed = False
     for task in tasks:
@@ -103,29 +156,59 @@ def run_greenos():
             missed = True
     if not missed:
         log("None")
+    update_task_table()
+
+def calculate_conventional_energy():
+    time = 0
+    energy = 0
+    sorted_tasks = sorted(tasks, key=lambda t: t.arrival_time)
+    for task in sorted_tasks:
+        if task.arrival_time > time:
+            time = task.arrival_time
+        energy += task.burst_time * 1.5
+        time += task.burst_time
+    return energy
 
 def clear():
-    tasks.clear()
+    global scheduler_ran
+    scheduler_ran = False
     output_text.delete('1.0', tk.END)
+    for row in task_table.get_children():
+        task_table.delete(row)
+    for task in tasks:
+        task.reset()
     log("Tasks and output cleared.")
+    update_task_table()
 
-# Buttons
-frame = tk.Frame(root)
+def update_task_table():
+    for row in task_table.get_children():
+        task_table.delete(row)
+    for task in tasks:
+        task_table.insert('', 'end', values=(task.name, task.arrival_time, task.burst_time, task.deadline, task.start_time, task.finish_time, "Yes" if task.completed else "No"))
+
+frame = tk.Frame(root, bg="#121212")
 frame.pack(pady=10)
 
-btn_manual = tk.Button(frame, text="Manual Input", command=manual_input)
-btn_manual.grid(row=0, column=0, padx=5)
+btn_manual = tk.Button(frame, text="Manual Input", command=manual_input, bg="#03DAC5", fg="black", font=('Consolas', 10, 'bold'), width=15)
+btn_manual.grid(row=0, column=0, padx=10)
 
-btn_csv = tk.Button(frame, text="Load CSV", command=load_csv)
-btn_csv.grid(row=0, column=1, padx=5)
+btn_csv = tk.Button(frame, text="Load CSV", command=load_csv, bg="#BB86FC", fg="black", font=('Consolas', 10, 'bold'), width=15)
+btn_csv.grid(row=0, column=1, padx=10)
 
-btn_json = tk.Button(frame, text="Load JSON", command=load_json)
-btn_json.grid(row=0, column=2, padx=5)
+btn_json = tk.Button(frame, text="Load JSON", command=load_json, bg="#FFB74D", fg="black", font=('Consolas', 10, 'bold'), width=15)
+btn_json.grid(row=0, column=2, padx=10)
 
-btn_run = tk.Button(frame, text="Run Scheduler", command=run_greenos)
-btn_run.grid(row=0, column=3, padx=5)
+btn_run = tk.Button(frame, text="Run Scheduler", command=run_greenos, bg="#4CAF50", fg="white", font=('Consolas', 10, 'bold'), width=15)
+btn_run.grid(row=0, column=3, padx=10)
 
-btn_clear = tk.Button(frame, text="Clear", command=clear)
-btn_clear.grid(row=0, column=4, padx=5)
+btn_clear = tk.Button(frame, text="Clear All", command=clear, bg="#CF6679", fg="white", font=('Consolas', 10, 'bold'), width=15)
+btn_clear.grid(row=0, column=4, padx=10)
+
+columns = ("Name", "Arrival", "Burst", "Deadline", "Start", "Finish", "Done")
+task_table = Treeview(root, columns=columns, show='headings', style="Treeview")
+for col in columns:
+    task_table.heading(col, text=col)
+    task_table.column(col, width=130, anchor='center')
+task_table.pack(padx=20, pady=20, fill='both', expand=True)
 
 root.mainloop()
