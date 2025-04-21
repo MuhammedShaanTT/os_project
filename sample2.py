@@ -1,10 +1,8 @@
 import csv
 import json
 import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog
-from tkinter.ttk import Treeview, Style, Scrollbar
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import matplotlib.pyplot as plt
+from tkinter import filedialog, simpledialog
+from tkinter.ttk import Treeview, Style
 
 class Task:
     def __init__(self, name, arrival_time, burst_time, deadline):
@@ -24,60 +22,34 @@ class Task:
         self.completed = False
 
 tasks = []
-scheduler_ran = False
 
-# UI setup
 root = tk.Tk()
 root.title("GreenOS Scheduler Pro")
 root.geometry("1100x800")
 root.configure(bg="#121212")
 
-# Style
 style = Style()
 style.theme_use("clam")
-style.configure("Treeview",
-                background="#1e1e1e",
-                foreground="#00FF00",
-                rowheight=30,
-                fieldbackground="#1e1e1e",
-                font=('Consolas', 11))
+style.configure("Treeview", background="#1e1e1e", foreground="#00FF00", rowheight=30,
+                fieldbackground="#1e1e1e", font=('Consolas', 11))
 style.configure("Treeview.Heading", background="#333333", foreground="#00FF00", font=('Consolas', 12, 'bold'))
 
-main_canvas = tk.Canvas(root, bg="#121212")
-main_scrollbar = Scrollbar(root, orient="vertical", command=main_canvas.yview)
-main_scrollbar.pack(side="right", fill="y")
-main_canvas.pack(side="left", fill="both", expand=True)
-main_canvas.configure(yscrollcommand=main_scrollbar.set)
+main_frame = tk.Frame(root, bg="#121212")
+main_frame.pack(fill="both", expand=True)
 
-main_frame = tk.Frame(main_canvas, bg="#121212")
-main_canvas.create_window((0, 0), window=main_frame, anchor="nw")
-
-def configure_scroll(event):
-    main_canvas.configure(scrollregion=main_canvas.bbox("all"))
-
-main_frame.bind("<Configure>", configure_scroll)
-
-# Output log box with scroll
 output_frame = tk.Frame(main_frame)
 output_frame.pack(padx=20, pady=(20, 10), fill='x')
 
-output_scrollbar = Scrollbar(output_frame)
-output_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-output_text = tk.Text(output_frame, wrap='word', bg='#1e1e1e', fg='#00FF00', font=('Consolas', 11), height=12, insertbackground='white', yscrollcommand=output_scrollbar.set)
+output_text = tk.Text(output_frame, wrap='word', bg='#1e1e1e', fg='#00FF00', font=('Consolas', 11), height=12, insertbackground='white')
 output_text.pack(side=tk.LEFT, fill='x', expand=True)
-output_scrollbar.config(command=output_text.yview)
 
-chart_frame = tk.Frame(main_frame, bg="#121212")
-chart_frame.pack(padx=10, pady=10, fill='both', expand=False)
-
-chart_canvas = None
-
+output_scrollbar = tk.Scrollbar(output_frame, command=output_text.yview)
+output_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+output_text.config(yscrollcommand=output_scrollbar.set)
 
 def log(msg):
     output_text.insert(tk.END, msg + "\n")
     output_text.see(tk.END)
-
 
 def add_task(name, at, bt, dl):
     if at < 0 or bt <= 0 or dl < at:
@@ -85,7 +57,6 @@ def add_task(name, at, bt, dl):
         return
     tasks.append(Task(name, at, bt, dl))
     update_task_table()
-
 
 def load_csv():
     file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
@@ -97,7 +68,6 @@ def load_csv():
             add_task(row['name'], int(row['arrival_time']), int(row['burst_time']), int(row['deadline']))
     log("Loaded tasks from CSV.")
 
-
 def load_json():
     file_path = filedialog.askopenfilename(filetypes=[("JSON files", "*.json")])
     if not file_path:
@@ -108,7 +78,6 @@ def load_json():
             add_task(item['name'], item['arrival_time'], item['burst_time'], item['deadline'])
     log("Loaded tasks from JSON.")
 
-
 def manual_input():
     n = simpledialog.askinteger("Manual Input", "Enter number of tasks:")
     for i in range(n):
@@ -117,33 +86,19 @@ def manual_input():
         bt = simpledialog.askinteger("Task", f"Burst Time for {name}:")
         dl = simpledialog.askinteger("Task", f"Deadline for {name}:")
         add_task(name, at, bt, dl)
-        
+
 def run_greenos():
-    global scheduler_ran
-    if scheduler_ran:
-        clear()
     if not tasks:
         log("No tasks to schedule.")
         return
 
-    scheduler_ran = True
     time = 0
-    energy = 0
-    cpu_energy = 0
-    gpu_energy = 0
-    memory_energy = 0
-    screen_energy = 0
-    completed_tasks = 0
+    energy = cpu_energy = gpu_energy = memory_energy = screen_energy = completed_tasks = 0
 
     log("\n[GreenOS Scheduler Simulation]\n")
     tasks.sort(key=lambda t: (t.deadline / t.burst_time, t.arrival_time))
     while completed_tasks < len(tasks):
-        idx = -1
-        for i, task in enumerate(tasks):
-            if not task.completed and task.arrival_time <= time:
-                idx = i
-                break
-
+        idx = next((i for i, t in enumerate(tasks) if not t.completed and t.arrival_time <= time), -1)
         if idx != -1:
             task = tasks[idx]
             if task.start_time == -1:
@@ -167,7 +122,7 @@ def run_greenos():
             screen_energy += 0.05
             energy += 0.5
 
-    conventional_energy = calculate_conventional_energy()
+    conventional_energy = sum(t.burst_time * 1.5 for t in sorted(tasks, key=lambda t: t.arrival_time))
     energy_saved = conventional_energy - energy
     log(f"\nTotal Energy Consumed by GreenOS: {energy:.2f}")
     log(f"  - CPU Energy: {cpu_energy:.2f}")
@@ -178,67 +133,46 @@ def run_greenos():
     log(f"Energy Saved by GreenOS: {energy_saved:.2f}")
 
     log("Missed Deadlines:")
-    missed = False
+    missed_any = False
     for task in tasks:
         if task.finish_time > task.deadline:
             log(f"- {task.name}")
-            missed = True
-    if not missed:
+            missed_any = True
+    if not missed_any:
         log("None")
+
     update_task_table()
-    display_energy_chart(cpu_energy, gpu_energy, memory_energy, screen_energy)
-
-
-def calculate_conventional_energy():
-    time = 0
-    energy = 0
-    sorted_tasks = sorted(tasks, key=lambda t: t.arrival_time)
-    for task in sorted_tasks:
-        if task.arrival_time > time:
-            time = task.arrival_time
-        energy += task.burst_time * 1.5
-        time += task.burst_time
-    return energy
-
 
 def clear():
-    global scheduler_ran, chart_canvas
-    scheduler_ran = False
     output_text.delete('1.0', tk.END)
-    for row in task_table.get_children():
-        task_table.delete(row)
     for task in tasks:
         task.reset()
-    if chart_canvas:
-        chart_canvas.get_tk_widget().destroy()
-        chart_canvas = None
     log("Tasks and output cleared.")
     update_task_table()
-
 
 def update_task_table():
     for row in task_table.get_children():
         task_table.delete(row)
     for task in tasks:
-        task_table.insert('', 'end', values=(task.name, task.arrival_time, task.burst_time, task.deadline, task.start_time, task.finish_time, "Yes" if task.completed else "No"))
+        task_table.insert('', 'end', values=(
+            task.name, task.arrival_time, task.burst_time, task.deadline,
+            task.start_time, task.finish_time, "Yes" if task.completed else "No"
+        ))
 
 frame = tk.Frame(main_frame, bg="#121212")
 frame.pack(pady=10)
 
-btn_manual = tk.Button(frame, text="Manual Input", command=manual_input, bg="#03DAC5", fg="black", font=('Consolas', 10, 'bold'), width=15)
-btn_manual.grid(row=0, column=0, padx=10)
+btns = [
+    ("Manual Input", manual_input, "#03DAC5"),
+    ("Load CSV", load_csv, "#BB86FC"),
+    ("Load JSON", load_json, "#FFB74D"),
+    ("Run Scheduler", run_greenos, "#4CAF50"),
+    ("Clear All", clear, "#CF6679")
+]
 
-btn_csv = tk.Button(frame, text="Load CSV", command=load_csv, bg="#BB86FC", fg="black", font=('Consolas', 10, 'bold'), width=15)
-btn_csv.grid(row=0, column=1, padx=10)
-
-btn_json = tk.Button(frame, text="Load JSON", command=load_json, bg="#FFB74D", fg="black", font=('Consolas', 10, 'bold'), width=15)
-btn_json.grid(row=0, column=2, padx=10)
-
-btn_run = tk.Button(frame, text="Run Scheduler", command=run_greenos, bg="#4CAF50", fg="white", font=('Consolas', 10, 'bold'), width=15)
-btn_run.grid(row=0, column=3, padx=10)
-
-btn_clear = tk.Button(frame, text="Clear All", command=clear, bg="#CF6679", fg="white", font=('Consolas', 10, 'bold'), width=15)
-btn_clear.grid(row=0, column=4, padx=10)
+for idx, (text, cmd, color) in enumerate(btns):
+    tk.Button(frame, text=text, command=cmd, bg=color, fg="black" if "Clear" not in text else "white",
+              font=('Consolas', 10, 'bold'), width=15).grid(row=0, column=idx, padx=10)
 
 columns = ("Name", "Arrival", "Burst", "Deadline", "Start", "Finish", "Done")
 task_table = Treeview(main_frame, columns=columns, show='headings', style="Treeview")
